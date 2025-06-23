@@ -4,10 +4,6 @@ import speech_recognition as sr
 import numpy as np
 import io
 import soundfile as sf
-""" 
-Virker fint, giv den evt. adgang til tools i form af numpy, math osv.
-"""
-
 
 DEFAULT_SYSTEM_PROMPT = """Du er en matematik lærer der skal hjælpe eleven med at løse deres opgaver. 
 Du giver aldrig eleven løsningen, men hjælper dem ved at forklare hvordan man generelt løser opgaverne, 
@@ -20,69 +16,55 @@ def generate_response(msg, history, system_prompt=DEFAULT_SYSTEM_PROMPT):
     print(history)
     messages = [{"role": "system", "content": system_prompt}] + history
     messages.append({"role": "user", "content": msg})  
-    response = ollama.chat(model='gemma2:27b', stream=True, messages=messages)
+    response = ollama.chat(model='gemma3:27b', stream=True, messages=messages)
     message = ""
     for partial_resp in response:
         message += partial_resp["message"]["content"]
-        yield message #stream beskeden
+        yield message  # stream the message
 
 recognizer = sr.Recognizer()
 
 def transcribe(lyd):
     """
-    Transkibere lyd data vha. Google's talegenkendelse.
+    Transcribe audio data using Google's speech recognition.
     
     Args:
-        lyd (Tuple[int, numpy.ndarray]):  Et tuple der indeholder samplingsrate og lydkilende signal som en NumPy array.
+        lyd (Tuple[int, numpy.ndarray]): A tuple containing the sample rate and the audio signal as a NumPy array.
 
     Returns:
-        str: Transkriberet tekst fra lydfilen. Returnerer fejl hvis transkriberingen fejler.
+        str: Transcribed text from the audio file. Returns error message if transcription fails.
     """
     if lyd is None:
         return "No lyd input detected."
     
     sr_rate, y = lyd  # Gradio provides a tuple (sampling_rate, numpy_array)
     
-    # Konverter til mono hvis lyden er stereo
+    # Convert to mono if the audio is stereo
     if y.ndim > 1:
         y = y.mean(axis=1)
     
-    # Normaliser lyd
+    # Normalize audio
     y = y.astype(np.float32)
     y /= np.max(np.abs(y)) if np.max(np.abs(y)) > 0 else 1
 
-    # Konverter NumPy array til WAV file-like object
+    # Convert NumPy array to WAV file-like object
     wav_bytes_io = io.BytesIO()
     sf.write(wav_bytes_io, y, sr_rate, format='WAV')
     wav_bytes_io.seek(0)
 
-    # Use speech_recognition to process the lyd
+    # Use speech_recognition to process the audio
     with sr.AudioFile(wav_bytes_io) as source:
         lyd_data = recognizer.record(source)
         try:
             text = recognizer.recognize_google(lyd_data, language="da-DK")
             return text  # Return only the text for the next function
         except sr.UnknownValueError:
-            return "Kunne ikke forstå lyden."
+            return "Could not understand the audio."
         except sr.RequestError:
-            return "Fejl ved forespørgsel til genkendelsesservice."
+            return "Error contacting the recognition service."
 
-"""
-chatbot = gr.ChatInterface(
-    fn=generate_response,
-    chatbot=gr.Chatbot(avatar_images=["user.jpg", "chatbot.png"], height="50vh", type="messages"),  
-    additional_inputs=[gr.Textbox(DEFAULT_SYSTEM_PROMPT, label="System Prompt")],
-    
-    title="Gemma-2 (27B) Chatbot using Ollama",
-    description="Feel free to ask any question.",
-    theme="soft",
-    submit_btn="⬅ Send"
-)
-
-chatbot.launch()
-"""
+# Create Gradio UI
 with gr.Blocks(theme=gr.themes.Default(primary_hue=gr.themes.colors.red, secondary_hue=gr.themes.colors.pink)) as demo:
-
     title = gr.HTML("<h1>Matematik assistent</h1>")
     with gr.Row():
         with gr.Column():
@@ -98,4 +80,3 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue=gr.themes.colors.red, seconda
     gr.ChatInterface(fn=generate_response, textbox=transcribed_text, chatbot=chatbot)
 
 demo.launch(share=True)
-
